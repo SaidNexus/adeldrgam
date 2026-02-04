@@ -1,12 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlmodel import Session, select
 from sqlalchemy.exc import IntegrityError
+from fastapi import BackgroundTasks
 from typing import List, Optional
 from datetime import datetime
 import logging
 import json
 
-from app.db.session import get_session
+from app.db.session import get_session, SessionLocal
 from app.models.article import Article, ArticleCreate, ArticleUpdate, ArticleRead, AuthorInfo, ArticleView
 from app.models.user import User
 from app.models.profile import Profile
@@ -19,13 +20,108 @@ from app.services.article_social_service import ArticleSocialService
 from app.models.notification import Notification
 from app.models.user_follow import UserFollow
 from app.api.notifications import manager
-import json
-import asyncio
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+
+# ============================================================================
+# BACKGROUND TASK FUNCTIONS (Production-Safe)
+# ============================================================================
+
+def notify_followers_background_task(article_id: str, author_id: str):
+    """
+    Background task to notify followers about a new article.
+    - Opens its own DB session
+    - Safe for container/production deployment
+    - Handles async WebSocket notifications properly
+    """
+    import asyncio
+    
+    def _sync_notify():
+        """Inner synchronous function that manages the DB session"""
+        with SessionLocal() as session:
+            try:
+                # Fetch article and author with new session
+                article = session.get(Article, article_id)
+                author = session.get(User, author_id)
+                
+                if not article or not author:
+                    logger.warning(f"Article {article_id} or author {author_id} not found for notifications")
+                    return
+                
+                # Get all followers
+                followers = session.exec(
+                    select(UserFollow).where(UserFollow.followed_id == author.id)
+                ).all()
+                
+                if not followers:
+                    logger.info(f"No followers to notify for author {author_id}")
+                    return
+                
+                author_profile = session.get(Profile, author.id)
+                
+                # Create notifications for each follower
+                notifications_to_send = []
+                
+                for follower in followers:
+                    notif = Notification(
+                        user_id=follower.follower_id,
+                        type="new_article",
+                        title="مقال جديد",
+                        message=f"نشر {author.full_name or author.username} مقالاً جديداً: {article.title}",
+                        metadata_={
+                            "article_id": article.id,
+                            "article_slug": article.slug,
+                            "article_title": article.title,
+                            "author_id": author.id,
+                            "author_name": author.full_name or author.username,
+                            "author_avatar": author_profile.avatar_url if author_profile else None
+                        }
+                    )
+                    session.add(notif)
+                    session.flush()  # Get the ID without committing
+                    session.refresh(notif)
+                    
+                    notifications_to_send.append({
+                        "follower_id": follower.follower_id,
+                        "notification_data": {
+                            "type": "NEW_NOTIFICATION",
+                            "notification": json.loads(notif.json())
+                        }
+                    })
+                
+                # Commit all notifications at once
+                session.commit()
+                
+                # Send WebSocket notifications asynchronously
+                async def send_websocket_notifications():
+                    for item in notifications_to_send:
+                        try:
+                            await manager.send_personal_message(
+                                item["notification_data"],
+                                item["follower_id"]
+                            )
+                        except Exception as ws_error:
+                            logger.error(f"WebSocket send failed for user {item['follower_id']}: {ws_error}")
+                
+                # Run the async WebSocket sends
+                asyncio.run(send_websocket_notifications())
+                
+                logger.info(f"Notified {len(followers)} followers about article {article_id}")
+                
+            except Exception as e:
+                logger.error(f"Error in notify_followers_background_task: {e}", exc_info=True)
+                session.rollback()
+    
+    # Execute the sync function
+    _sync_notify()
+
+
+# ============================================================================
+# HELPER FUNCTIONS
+# ============================================================================
 
 def _safe_get_stats(session: Session, article_id: str, user_id: Optional[str], article: Article) -> dict:
     """Get social stats safely - never throws"""
@@ -55,7 +151,6 @@ def _safe_get_author(session: Session, author_id: str, current_user_id: Optional
         
         is_following = False
         if current_user_id:
-            from app.models.user_follow import UserFollow
             check = session.exec(select(UserFollow).where(
                 UserFollow.follower_id == current_user_id,
                 UserFollow.followed_id == author_id
@@ -117,38 +212,9 @@ def _enrich_article(
     return ArticleRead(**data)
 
 
-async def _notify_followers(article: Article, author: User, session: Session):
-    """Notify all followers about a new article"""
-    try:
-        followers = session.exec(select(UserFollow).where(UserFollow.followed_id == author.id)).all()
-        author_profile = session.get(Profile, author.id)
-        for f in followers:
-            notif = Notification(
-                user_id=f.follower_id,
-                type="new_article",
-                title="مقال جديد",
-                message=f"نشر {author.full_name or author.username} مقالاً جديداً: {article.title}",
-                metadata_={
-                    "article_id": article.id,
-                    "article_slug": article.slug,
-                    "article_title": article.title,
-                    "author_id": author.id,
-                    "author_name": author.full_name or author.username,
-                    "author_avatar": author_profile.avatar_url if author_profile else None
-                }
-            )
-            session.add(notif)
-            session.commit()
-            session.refresh(notif)
-            
-            # Broadcast real-time
-            await manager.send_personal_message({
-                "type": "NEW_NOTIFICATION",
-                "notification": json.loads(notif.json())
-            }, f.follower_id)
-    except Exception as e:
-        logger.error(f"Error notifying followers: {e}")
-
+# ============================================================================
+# ENDPOINTS
+# ============================================================================
 
 @router.get("", response_model=List[ArticleRead])
 def get_articles(
@@ -159,7 +225,7 @@ def get_articles(
     category_slug: Optional[str] = Query(None),
     is_pinned: Optional[bool] = Query(None),
     is_featured: Optional[bool] = Query(None),
-    feed_type: Optional[str] = Query("for_you"), # for_you, following
+    feed_type: Optional[str] = Query("for_you"),  # for_you, following
     limit: int = Query(20, le=100),
     offset: int = Query(0),
     session: Session = Depends(get_session),
@@ -182,7 +248,6 @@ def get_articles(
             
         # 3. Feed Logic (For You vs Following)
         if feed_type == "following" and current_user:
-            from app.models.user_follow import UserFollow
             # Get IDs of users the current user follows
             followed_ids_stmt = select(UserFollow.followed_id).where(UserFollow.follower_id == current_user.id)
             query = query.where(Article.author_id.in_(followed_ids_stmt))
@@ -200,7 +265,7 @@ def get_articles(
             query = query.where(Article.author_id != current_user.id)
             query = query.where(User.role != "admin")
         
-        # 4. Filtering by Pinned/Featured
+        # 5. Filtering by Pinned/Featured
         if is_pinned is not None:
             query = query.where(Article.is_pinned == is_pinned)
         if is_featured is not None:
@@ -257,6 +322,7 @@ def get_liked_articles(
         logger.error(f"Error in get_liked_articles: {e}")
         return []
 
+
 @router.get("/{slug}", response_model=ArticleRead)
 def get_article_by_slug(
     slug: str,
@@ -305,16 +371,23 @@ def get_article_by_slug(
 
 
 @router.post("", response_model=ArticleRead, status_code=status.HTTP_201_CREATED)
-def create_article(
+async def create_article(
     article_data: ArticleCreate,
+    background_tasks: BackgroundTasks,
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
+    """
+    Create a new article.
+    - Async endpoint for background task support
+    - Uses BackgroundTasks for follower notifications
+    """
     if user.role not in ["publisher", "admin"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You do not have permission to publish articles. Please request to become a publisher."
         )
+    
     try:
         # Validate category_id if provided
         if article_data.category_id:
@@ -351,10 +424,17 @@ def create_article(
         session.commit()
         session.refresh(article)
 
+        # Schedule background notification if publishing
         if target_status == "published":
-            asyncio.create_task(_notify_followers(article, user, session))
+            background_tasks.add_task(
+                notify_followers_background_task,
+                article.id,
+                user.id
+            )
+            logger.info(f"Scheduled follower notifications for article {article.id}")
 
         return _enrich_article(article, session, user.id)
+        
     except HTTPException:
         raise
     except IntegrityError as e:
@@ -376,12 +456,18 @@ def create_article(
 
 
 @router.put("/{article_id}", response_model=ArticleRead)
-def update_article(
+async def update_article(
     article_id: str,
     updates: ArticleUpdate,
+    background_tasks: BackgroundTasks,
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
+    """
+    Update an existing article.
+    - Async endpoint for background task support
+    - Triggers notifications when transitioning to published
+    """
     try:
         article = session.get(Article, article_id)
         if not article:
@@ -409,8 +495,10 @@ def update_article(
             article.slug = generate_unique_slug(session, new_slug_base, exclude_id=article_id, status=target_status)
 
         old_status = article.status
+        
         for key, value in update_dict.items():
-            if key == "slug": continue # Already handled
+            if key == "slug":
+                continue  # Already handled
             
             # Guard: Only admin can change is_pinned or is_featured
             if key in ["is_pinned", "is_featured"] and user.role != "admin":
@@ -430,10 +518,17 @@ def update_article(
         session.commit()
         session.refresh(article)
 
+        # Schedule background notification if transitioning to published
         if old_status != "published" and article.status == "published":
-            asyncio.create_task(_notify_followers(article, user, session))
+            background_tasks.add_task(
+                notify_followers_background_task,
+                article.id,
+                user.id
+            )
+            logger.info(f"Scheduled follower notifications for newly published article {article.id}")
 
         return _enrich_article(article, session, user.id)
+        
     except HTTPException:
         raise
     except IntegrityError as e:
@@ -617,6 +712,8 @@ def get_article_comments(article_id: str, session: Session = Depends(get_session
     except Exception as e:
         logger.error(f"Comment fetch failed: {e}")
         return []
+
+
 @router.patch("/{article_id}/status")
 def update_article_status(
     article_id: str,
