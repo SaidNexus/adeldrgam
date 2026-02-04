@@ -38,3 +38,4 @@ pandas>=2.0.0
 # --- Integrations (Only what you actually need) ---
 supabase==2.5.0
 email-validator==2.1.1
+slowapi==0.1.9
