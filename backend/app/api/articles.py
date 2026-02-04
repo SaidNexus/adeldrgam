@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status, B
 from app.services.article_social_service import ArticleSocialService
 from sqlmodel import Session, select
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.inspection import inspect
 from typing import List, Optional
 from datetime import datetime
 import logging
@@ -162,17 +163,26 @@ def get_articles(
             query = query.where(Article.author_id.in_(followed_ids_stmt))
             
         # 4. Filtering by Author (Specific ID or Type)
-        if author_id:
-            query = query.where(Article.author_id == author_id)
-        elif author_type == "admin":
-            if User not in [t.entity_namespace for t in query.get_final_froms()]:
-                query = query.join(User, Article.author_id == User.id)
-            query = query.where(User.role == "admin")
-        elif author_type == "others" and current_user:
-            if User not in [t.entity_namespace for t in query.get_final_froms()]:
-                query = query.join(User, Article.author_id == User.id)
-            query = query.where(Article.author_id != current_user.id)
-            query = query.where(User.role != "admin")
+      
+if author_id:
+    query = query.where(Article.author_id == author_id)
+
+elif author_type == "admin":
+    user_table = inspect(User).persist_selectable
+
+    if user_table not in query.get_final_froms():
+        query = query.join(User, Article.author_id == User.id)
+
+    query = query.where(User.role == "admin")
+
+elif author_type == "others" and current_user:
+    user_table = inspect(User).persist_selectable
+
+    if user_table not in query.get_final_froms():
+        query = query.join(User, Article.author_id == User.id)
+
+    query = query.where(Article.author_id != current_user.id)
+    query = query.where(User.role != "admin")
         
         # 4. Filtering by Pinned/Featured
         if is_pinned is not None:
