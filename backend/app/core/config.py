@@ -27,9 +27,9 @@ class Settings(BaseSettings):
     BACKEND_CORS_ORIGINS: List[str] = ["http://localhost:5173", "http://localhost:3000"]
     
     # Cloudinary
-    CLOUDINARY_CLOUD_NAME: str = ""
-    CLOUDINARY_API_KEY: str = ""
-    CLOUDINARY_API_SECRET: str = ""
+    CLOUDINARY_CLOUD_NAME: str
+    CLOUDINARY_API_KEY: str
+    CLOUDINARY_API_SECRET: str
     
     class Config:
         env_file = ".env"
@@ -42,3 +42,4 @@ class Settings(BaseSettings):
             raise ValueError("SECRET_KEY must be set in .env and be at least 32 characters long")
 
 settings = Settings()
+
