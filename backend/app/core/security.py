@@ -19,10 +19,11 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
 def get_password_hash(password: str) -> str:
-    # Bcrypt has a 72 byte limit
-    if len(password) > settings.BCRYPT_MAX_PASSWORD_LENGTH:
-        raise ValueError(f"Password exceeds maximum length of {settings.BCRYPT_MAX_PASSWORD_LENGTH}")
+    # bcrypt 72 byte limit
+    max_len = settings.BCRYPT_MAX_PASSWORD_LENGTH or 72
+    password = password[:max_len]
     return pwd_context.hash(password)
+
 
 import uuid
 
@@ -108,3 +109,4 @@ def get_current_user_optional(
         return user
     except HTTPException:
         return None
+
