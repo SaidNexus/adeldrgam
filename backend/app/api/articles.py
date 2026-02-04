@@ -123,8 +123,6 @@ def _enrich_article(
 
 
 
-
-
 @router.get("", response_model=List[ArticleRead])
 def get_articles(
     status: Optional[str] = Query("published"),
@@ -134,7 +132,7 @@ def get_articles(
     category_slug: Optional[str] = Query(None),
     is_pinned: Optional[bool] = Query(None),
     is_featured: Optional[bool] = Query(None),
-    feed_type: Optional[str] = Query("for_you"), # for_you, following
+    feed_type: Optional[str] = Query("for_you"),
     limit: int = Query(20, le=100),
     offset: int = Query(0),
     session: Session = Depends(get_session),
@@ -158,33 +156,25 @@ def get_articles(
         # 3. Feed Logic (For You vs Following)
         if feed_type == "following" and current_user:
             from app.models.user_follow import UserFollow
-            # Get IDs of users the current user follows
             followed_ids_stmt = select(UserFollow.followed_id).where(UserFollow.follower_id == current_user.id)
             query = query.where(Article.author_id.in_(followed_ids_stmt))
             
         # 4. Filtering by Author (Specific ID or Type)
-      
-if author_id:
-    query = query.where(Article.author_id == author_id)
-
-elif author_type == "admin":
-    user_table = inspect(User).persist_selectable
-
-    if user_table not in query.get_final_froms():
-        query = query.join(User, Article.author_id == User.id)
-
-    query = query.where(User.role == "admin")
-
-elif author_type == "others" and current_user:
-    user_table = inspect(User).persist_selectable
-
-    if user_table not in query.get_final_froms():
-        query = query.join(User, Article.author_id == User.id)
-
-    query = query.where(Article.author_id != current_user.id)
-    query = query.where(User.role != "admin")
+        if author_id:
+            query = query.where(Article.author_id == author_id)
+        elif author_type == "admin":
+            user_table = inspect(User).persist_selectable
+            if user_table not in query.get_final_froms():
+                query = query.join(User, Article.author_id == User.id)
+            query = query.where(User.role == "admin")
+        elif author_type == "others" and current_user:
+            user_table = inspect(User).persist_selectable
+            if user_table not in query.get_final_froms():
+                query = query.join(User, Article.author_id == User.id)
+            query = query.where(Article.author_id != current_user.id)
+            query = query.where(User.role != "admin")
         
-        # 4. Filtering by Pinned/Featured
+        # 5. Filtering by Pinned/Featured
         if is_pinned is not None:
             query = query.where(Article.is_pinned == is_pinned)
         if is_featured is not None:
@@ -198,7 +188,6 @@ elif author_type == "others" and current_user:
         logger.error(f"Error fetching articles: {e}", exc_info=True)
         traceback.print_exc()
         return []
-
 
 @router.get("/id/{article_id}", response_model=ArticleRead)
 def get_article_by_id(
@@ -735,4 +724,5 @@ def update_article_status(
     session.add(db_article)
     session.commit()
     return {"message": f"Article status updated to {status}", "status": status}
+
 
