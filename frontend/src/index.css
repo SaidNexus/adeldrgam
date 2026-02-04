@@ -1,0 +1,91 @@
+@import url('https://fonts.googleapis.com/css2?family=Almarai:wght@300;400;700;800&family=Inter:wght@400;500;600;700;800&display=swap');
+
+@import "tailwindcss";
+
+:root {
+  /* Common */
+  --font-almarai: 'Almarai', sans-serif;
+
+  /* Light Mode Only - Clean Slate */
+  --background: #f8fafc;
+  --foreground: #0f172a;
+  --card: #ffffff;
+  --card-foreground: #0f172a;
+  --popover: #ffffff;
+  --popover-foreground: #0f172a;
+  --primary: #2563eb;
+  --primary-foreground: #ffffff;
+  --secondary: #f1f5f9;
+  --secondary-foreground: #0f172a;
+  --muted: #f1f5f9;
+  --muted-foreground: #64748b;
+  --accent: #f1f5f9;
+  --accent-foreground: #0f172a;
+  --destructive: #ef4444;
+  --destructive-foreground: #f8fafc;
+  --border: #e2e8f0;
+  --input: #e2e8f0;
+  --ring: #2563eb;
+  --radius: 0.75rem;
+}
+
+@layer base {
+
+  *,
+  *::before,
+  *::after {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-variant-numeric: tabular-nums;
+    -moz-font-feature-settings: "tnum";
+    -webkit-font-feature-settings: "tnum";
+    font-feature-settings: "tnum";
+  }
+
+  html {
+    scroll-behavior: smooth;
+    width: 100%;
+    overflow-x: hidden;
+  }
+
+  body {
+    font-family: "Inter", "Almarai", system-ui, sans-serif;
+    direction: rtl;
+    text-align: right;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    width: 100%;
+    min-height: 100vh;
+    background-color: #f8fafc;
+    color: #0f172a;
+    overflow-x: hidden;
+  }
+
+  #root {
+    width: 100%;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+}
+
+@layer components {
+  .container-centered {
+    @apply max-w-7xl mx-auto px-6 w-full;
+  }
+
+  .prose-editor-container .ProseMirror {
+    @apply outline-none min-h-[500px] text-xl leading-[1.8] text-gray-800 font-medium;
+    font-family: "Inter", "Almarai", sans-serif;
+    letter-spacing: -0.01em;
+  }
+
+  .prose-editor-container .ProseMirror p {
+    @apply mb-6;
+  }
+
+  .prose-editor-container .ProseMirror h1,
+  .prose-editor-container .ProseMirror h2 {
+    @apply font-black text-gray-900 mt-10 mb-6 leading-tight;
+  }
+}
