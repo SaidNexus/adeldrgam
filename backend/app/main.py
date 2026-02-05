@@ -4,6 +4,7 @@ from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from starlette.middleware.base import BaseHTTPMiddleware
+from app.core.config import settings
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 from app.api import auth, profiles, articles, upload, comments, categories, publisher_requests, users, notifications, admin, stats
 from app.core.limiter import limiter
@@ -182,3 +183,4 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     logger.info("Shutting down application")
+
