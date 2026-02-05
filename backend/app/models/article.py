@@ -1,5 +1,6 @@
 from sqlmodel import SQLModel, Field, Column, Relationship
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import ForeignKey, String
 from typing import Optional, Any, List, TYPE_CHECKING
 from datetime import datetime
 import uuid
@@ -34,7 +35,12 @@ class ArticleBase(SQLModel):
 class Article(ArticleBase, table=True):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
     content: Optional[dict] = Field(default=None, sa_column=Column(JSONB))
-    author_id: str = Field(foreign_key="user.id")
+    author_id: str = Field(
+        sa_column=Column(
+            String,
+            ForeignKey("user.id", ondelete="CASCADE")
+        )
+    )
     category_id: Optional[str] = Field(default=None, foreign_key="category.id")
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
@@ -56,7 +62,13 @@ class Article(ArticleBase, table=True):
 
 class ArticleView(SQLModel, table=True):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
-    article_id: str = Field(foreign_key="article.id", index=True)
+    article_id: str = Field(
+        sa_column=Column(
+            String,
+            ForeignKey("article.id", ondelete="CASCADE"),
+            index=True
+        )
+    )
     viewer_hash: str = Field(index=True)
     viewed_at: datetime = Field(default_factory=datetime.utcnow)
 
