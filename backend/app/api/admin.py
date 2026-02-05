@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlmodel import Session, select
 from sqlalchemy import func
 from typing import List, Optional
+from sqlalchemy import text
 from app.db.session import get_session
 from app.models.user import User
 from app.models.article import Article
@@ -219,3 +220,14 @@ def update_user_status(
     session.add(user)
     session.commit()
     return {"message": f"User status updated to {'active' if is_active else 'inactive'}"}
+
+@router.get("/debug/check-duplicate-emails")
+def check_duplicate_emails(session: Session = Depends(get_session)):
+    rows = session.exec(text("""
+        SELECT email, COUNT(*)
+        FROM "user"
+        GROUP BY email
+        HAVING COUNT(*) > 1
+    """)).all()
+    return {"duplicates": rows}
+
