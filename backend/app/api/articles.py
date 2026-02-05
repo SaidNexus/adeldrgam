@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status, B
 from sqlmodel import Session, select
 from sqlalchemy.exc import IntegrityError
 from typing import List, Optional
+from app.services.article_social_service import ArticleSocialService
 from datetime import datetime
 import logging
 import json
@@ -724,3 +725,4 @@ def update_article_status(
     session.add(db_article)
     session.commit()
     return {"message": f"Article status updated to {status}", "status": status}
+
