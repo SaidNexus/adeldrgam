@@ -2,7 +2,6 @@ from fastapi import FastAPI, Request, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
-from app.core.config import settings
 from slowapi.errors import RateLimitExceeded
 from starlette.middleware.base import BaseHTTPMiddleware
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError
@@ -128,6 +127,52 @@ async def startup_event():
         logger.info("Creating database tables if they don't exist...")
         SQLModel.metadata.create_all(engine)
         logger.info("Database tables verified/created")
+
+        # Fix CASCADE constraints
+        logger.info("Verifying and fixing CASCADE constraints...")
+        constraints_sql = [
+            # article -> user
+            ("article", "article_author_id_fkey", "author_id", "user", "id"),
+            # publisher_requests -> user
+            ("publisher_requests", "publisher_requests_user_id_fkey", "user_id", "user", "id"),
+            # comment -> article, user, parent
+            ("comment", "comment_article_id_fkey", "article_id", "article", "id"),
+            ("comment", "comment_user_id_fkey", "user_id", "user", "id"),
+            ("comment", "comment_parent_id_fkey", "parent_id", "comment", "id"),
+            # articlelike -> article, user
+            ("articlelike", "articlelike_article_id_fkey", "article_id", "article", "id"),
+            ("articlelike", "articlelike_user_id_fkey", "user_id", "user", "id"),
+            # refreshtoken -> user
+            ("refreshtoken", "refreshtoken_user_id_fkey", "user_id", "user", "id"),
+            # passwordresettoken -> user
+            ("passwordresettoken", "passwordresettoken_user_id_fkey", "user_id", "user", "id"),
+            # articleview -> article
+            ("articleview", "articleview_article_id_fkey", "article_id", "article", "id"),
+            # userfollow -> user
+            ("userfollow", "userfollow_follower_id_fkey", "follower_id", "user", "id"),
+            ("userfollow", "userfollow_followed_id_fkey", "followed_id", "user", "id"),
+            # notification -> user
+            ("notification", "notification_user_id_fkey", "user_id", "user", "id"),
+            # notificationpreferences -> user
+            ("notificationpreferences", "notificationpreferences_user_id_fkey", "user_id", "user", "id"),
+        ]
+
+        try:
+            with engine.connect() as conn:
+                for table, constraint, col, ref_table, ref_col in constraints_sql:
+                    # Drop existing
+                    conn.execute(text(f'ALTER TABLE "{table}" DROP CONSTRAINT IF EXISTS "{constraint}";'))
+                    # Add with CASCADE
+                    conn.execute(text(f"""
+                        ALTER TABLE "{table}" 
+                        ADD CONSTRAINT "{constraint}" 
+                        FOREIGN KEY ("{col}") REFERENCES "{ref_table}"("{ref_col}") 
+                        ON DELETE CASCADE;
+                    """))
+                conn.commit()
+            logger.info("Successfully fixed CASCADE constraints")
+        except Exception as e:
+            logger.warning(f"Note: Some constraints might already exist or tables might be missing: {e}")
         
     except Exception as e:
         logger.error(f"Failed to connect to the database: {e}")
@@ -137,4 +182,3 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     logger.info("Shutting down application")
-
