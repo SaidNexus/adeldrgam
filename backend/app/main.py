@@ -6,10 +6,12 @@ from slowapi.errors import RateLimitExceeded
 from starlette.middleware.base import BaseHTTPMiddleware
 from app.core.config import settings
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError
+from sqlalchemy import text
 from app.api import auth, profiles, articles, upload, comments, categories, publisher_requests, users, notifications, admin, stats
 from app.core.limiter import limiter
 from sqlmodel import SQLModel
 from app.models import *
+from app.db.session import engine
 import logging
 
 logger = logging.getLogger(__name__)
@@ -70,8 +72,6 @@ async def general_exception_handler(request: Request, exc: Exception):
 
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
-
-# Request size limit middleware
 app.add_middleware(LimitRequestBodySize)
 
 # CORS Middleware
@@ -110,77 +110,53 @@ def health_check():
 async def startup_event():
     logger.info(f"Starting {settings.PROJECT_NAME} in {settings.ENVIRONMENT} mode")
     
-    # Log database URL for debugging
-    print(f"\n{'='*80}")
-    print(f"DATABASE CONNECTION INFO:")
-    print(f"Database URL: {settings.SQLALCHEMY_DATABASE_URI}")
-    print(f"{'='*80}\n")
-    
-    # Verify DB connectivity
-    from sqlalchemy import text
-    from app.db.session import engine
     try:
         with engine.connect() as conn:
-            conn.execute(text("SELECT 1"))
-        logger.info("Successfully connected to the database")
-        
-        # Create/Update tables
-        logger.info("Creating database tables if they don't exist...")
-        SQLModel.metadata.create_all(engine)
-        logger.info("Database tables verified/created")
+            # 1. تنظيف البيانات اليتيمة (مهم جداً لنجاح الـ CASCADE)
+            logger.info("Cleaning orphaned records before applying CASCADE...")
+            conn.execute(text('DELETE FROM "refreshtoken" WHERE user_id NOT IN (SELECT id FROM "user");'))
+            conn.execute(text('DELETE FROM "passwordresettoken" WHERE user_id NOT IN (SELECT id FROM "user");'))
+            conn.commit()
 
-        # Fix CASCADE constraints
-        logger.info("Verifying and fixing CASCADE constraints...")
-        constraints_sql = [
-            # article -> user
-            ("article", "article_author_id_fkey", "author_id", "user", "id"),
-            # publisher_requests -> user
-            ("publisher_requests", "publisher_requests_user_id_fkey", "user_id", "user", "id"),
-            # comment -> article, user, parent
-            ("comment", "comment_article_id_fkey", "article_id", "article", "id"),
-            ("comment", "comment_user_id_fkey", "user_id", "user", "id"),
-            ("comment", "comment_parent_id_fkey", "parent_id", "comment", "id"),
-            # articlelike -> article, user
-            ("articlelike", "articlelike_article_id_fkey", "article_id", "article", "id"),
-            ("articlelike", "articlelike_user_id_fkey", "user_id", "user", "id"),
-            # refreshtoken -> user
-            ("refreshtoken", "refreshtoken_user_id_fkey", "user_id", "user", "id"),
-            # passwordresettoken -> user
-            ("passwordresettoken", "passwordresettoken_user_id_fkey", "user_id", "user", "id"),
-            # articleview -> article
-            ("articleview", "articleview_article_id_fkey", "article_id", "article", "id"),
-            # userfollow -> user
-            ("userfollow", "userfollow_follower_id_fkey", "follower_id", "user", "id"),
-            ("userfollow", "userfollow_followed_id_fkey", "followed_id", "user", "id"),
-            # notification -> user
-            ("notification", "notification_user_id_fkey", "user_id", "user", "id"),
-            # notificationpreferences -> user
-            ("notificationpreferences", "notificationpreferences_user_id_fkey", "user_id", "user", "id"),
-        ]
+            # 2. إنشاء الجداول
+            SQLModel.metadata.create_all(engine)
 
-        try:
-            with engine.connect() as conn:
-                for table, constraint, col, ref_table, ref_col in constraints_sql:
-                    # Drop existing
+            # 3. تحديث القوانين (CASCADE Constraints)
+            constraints_sql = [
+                ("article", "article_author_id_fkey", "author_id", "user", "id"),
+                ("publisher_requests", "publisher_requests_user_id_fkey", "user_id", "user", "id"),
+                ("comment", "comment_article_id_fkey", "article_id", "article", "id"),
+                ("comment", "comment_user_id_fkey", "user_id", "user", "id"),
+                ("comment", "comment_parent_id_fkey", "parent_id", "comment", "id"),
+                ("articlelike", "articlelike_article_id_fkey", "article_id", "article", "id"),
+                ("articlelike", "articlelike_user_id_fkey", "user_id", "user", "id"),
+                ("refreshtoken", "refreshtoken_user_id_fkey", "user_id", "user", "id"),
+                ("passwordresettoken", "passwordresettoken_user_id_fkey", "user_id", "user", "id"),
+                ("articleview", "articleview_article_id_fkey", "article_id", "article", "id"),
+                ("userfollow", "userfollow_follower_id_fkey", "follower_id", "user", "id"),
+                ("userfollow", "userfollow_followed_id_fkey", "followed_id", "user", "id"),
+                ("notification", "notification_user_id_fkey", "user_id", "user", "id"),
+                ("notificationpreferences", "notificationpreferences_user_id_fkey", "user_id", "user", "id"),
+            ]
+
+            for table, constraint, col, ref_table, ref_col in constraints_sql:
+                try:
                     conn.execute(text(f'ALTER TABLE "{table}" DROP CONSTRAINT IF EXISTS "{constraint}";'))
-                    # Add with CASCADE
                     conn.execute(text(f"""
                         ALTER TABLE "{table}" 
                         ADD CONSTRAINT "{constraint}" 
                         FOREIGN KEY ("{col}") REFERENCES "{ref_table}"("{ref_col}") 
                         ON DELETE CASCADE;
                     """))
-                conn.commit()
-            logger.info("Successfully fixed CASCADE constraints")
-        except Exception as e:
-            logger.warning(f"Note: Some constraints might already exist or tables might be missing: {e}")
-        
+                except Exception as e:
+                    logger.warning(f"Note: Constraint for {table} failed: {e}")
+            
+            conn.commit()
+            logger.info("Successfully fixed all CASCADE constraints")
+            
     except Exception as e:
-        logger.error(f"Failed to connect to the database: {e}")
-        if settings.ENVIRONMENT == "development":
-            print(f"\nCRITICAL DATABASE ERROR: {e}\n")
+        logger.error(f"Startup error: {e}")
 
 @app.on_event("shutdown")
 async def shutdown_event():
     logger.info("Shutting down application")
-
