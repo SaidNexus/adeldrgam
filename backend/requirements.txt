@@ -2,7 +2,8 @@ alembic
 annotated-doc
 annotated-types
 anyio
-bcrypt
+bcrypt==4.0.1
+passlib[bcrypt]==1.7.4
 cachetools
 certifi
 cffi
@@ -90,3 +91,4 @@ watchfiles
 websockets
 wrapt
 yarl
+
