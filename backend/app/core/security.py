@@ -16,12 +16,13 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/auth/login", auto_error=False)
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
+    if isinstance(plain_password, str):
+        plain_password = plain_password.encode("utf-8")[:72]
     return pwd_context.verify(plain_password, hashed_password)
 
 def get_password_hash(password: str) -> str:
-    # Bcrypt has a 72 byte limit
-    if len(password) > settings.BCRYPT_MAX_PASSWORD_LENGTH:
-        raise ValueError(f"Password exceeds maximum length of {settings.BCRYPT_MAX_PASSWORD_LENGTH}")
+    if isinstance(password, str):
+        password = password.encode("utf-8")[:72]
     return pwd_context.hash(password)
 
 import uuid
@@ -117,3 +118,4 @@ def get_current_active_superuser(
             detail="The user doesn't have enough privileges",
         )
     return current_user
+
