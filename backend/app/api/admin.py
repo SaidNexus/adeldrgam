@@ -221,13 +221,14 @@ def update_user_status(
     session.commit()
     return {"message": f"User status updated to {'active' if is_active else 'inactive'}"}
 
-@router.get("/debug/check-duplicate-emails")
-def check_duplicate_emails(session: Session = Depends(get_session)):
+@router.get("/debug/check-user-roles-duplicates")
+def check_user_roles_duplicates(session: Session = Depends(get_session)):
     rows = session.exec(text("""
-        SELECT email, COUNT(*)
-        FROM "user"
-        GROUP BY email
+        SELECT user_id, role, COUNT(*)
+        FROM user_roles
+        GROUP BY user_id, role
         HAVING COUNT(*) > 1
     """)).all()
     return {"duplicates": rows}
+
 
