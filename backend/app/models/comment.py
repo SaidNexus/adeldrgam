@@ -1,4 +1,5 @@
 from sqlmodel import SQLModel, Field, Relationship
+from sqlalchemy import Column, String, ForeignKey
 from pydantic import ConfigDict, BaseModel
 from typing import Optional, List, TYPE_CHECKING
 from datetime import datetime
@@ -10,14 +11,34 @@ if TYPE_CHECKING:
 
 class Comment(SQLModel, table=True):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
-    article_id: str = Field(foreign_key="article.id", index=True)
-    user_id: str = Field(foreign_key="user.id", index=True)
-    parent_id: Optional[str] = Field(default=None, foreign_key="comment.id", index=True)
+    article_id: str = Field(
+        sa_column=Column(
+            String,
+            ForeignKey("article.id", ondelete="CASCADE"),
+            index=True
+        )
+    )
+    user_id: str = Field(
+        sa_column=Column(
+            String,
+            ForeignKey("user.id", ondelete="CASCADE"),
+            index=True
+        )
+    )
+    parent_id: Optional[str] = Field(
+        default=None,
+        sa_column=Column(
+            String,
+            ForeignKey("comment.id", ondelete="CASCADE"),
+            index=True,
+            nullable=True
+        )
+    )
     content: str
     is_deleted: bool = Field(default=False)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
-
+    
     # Relationships
     user: "User" = Relationship(back_populates="comments")
     article: "Article" = Relationship(back_populates="comments")
