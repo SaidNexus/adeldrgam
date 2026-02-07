@@ -121,7 +121,7 @@ async def approve_publisher_request(
         user_id=db_request.user_id,
         type="system",
         title="تم قبول طلب الانضمام",
-        message="تهانينا! تم قبول طلبك لتصبح ناشراً في منصة نبض.",
+        message="تهانينا! تم قبول طلبك لتصبح ناشراً في منصة عادل ضرغام.",
         metadata_={"request_id": request_id, "action": "approved"}
     )
     session.add(notification)
@@ -196,3 +196,4 @@ async def reject_publisher_request(
         print(f"WS notification failed: {e}")
 
     return {"message": "Request rejected"}
+
