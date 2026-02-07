@@ -4,7 +4,7 @@ from typing import List, Optional
 import secrets
 
 class Settings(BaseSettings):
-    PROJECT_NAME: str = "Arabic CMS API"
+    PROJECT_NAME: str = "Adel Drgam CMS"
     API_V1_STR: str = "/api/v1"
     ENVIRONMENT: str = "development"
     
@@ -60,4 +60,5 @@ class Settings(BaseSettings):
 
 # حل مشكلة Pydantic النهائية
 Settings.model_rebuild()
+
 settings = Settings()
