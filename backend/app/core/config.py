@@ -24,8 +24,8 @@ class Settings(BaseSettings):
     # JWT 
     SECRET_KEY: str = "bfe3f2e188d296c1a197341b263c8b2a2043e57f9a8a8bf856f331fce662f225"
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
-    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 43200 # 30 days
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 30
     
     # Security
     RATE_LIMIT_PER_MINUTE: int = 60 # رفعته شوية عشان الداشبورد ميعملش بلوك
@@ -60,5 +60,4 @@ class Settings(BaseSettings):
 
 # حل مشكلة Pydantic النهائية
 Settings.model_rebuild()
-
 settings = Settings()
