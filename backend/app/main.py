@@ -106,7 +106,7 @@ def health_check():
         "environment": settings.ENVIRONMENT
     }
 
-@app.api_route("/ping".methods=["GET","HEAD"])
+@app.api_route("/ping" , methods=["GET","HEAD"])
 def ping():
     return {"status" : "ok"}
 
