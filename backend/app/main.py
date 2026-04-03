@@ -106,6 +106,12 @@ def health_check():
         "environment": settings.ENVIRONMENT
     }
 
+@app.api_route("/ping".methods=["GET","HEAD"])
+def ping():
+    return {"status" : "ok"}
+
+
+
 @app.on_event("startup")
 async def startup_event():
     logger.info(f"Starting {settings.PROJECT_NAME} in {settings.ENVIRONMENT} mode")
