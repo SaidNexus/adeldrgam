@@ -1,4 +1,0 @@
-User-agent: *
-Allow: /
-
-Sitemap: https://nabd-platform.netlify.app/sitemap.xml
